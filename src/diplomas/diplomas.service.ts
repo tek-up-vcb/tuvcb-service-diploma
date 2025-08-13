@@ -51,7 +51,85 @@ export class DiplomasService {
     }
   }
 
-  // Gestion des diplômes
+  async getUserById(authToken: string): Promise<any> {
+    try {
+      const authServiceUrl = process.env.AUTH_SERVICE_URL || 'http://tuvcb-service-auth:3001';
+      const response = await fetch(`${authServiceUrl}/auth/profile`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Auth service responded with status: ${response.status}`);
+      }
+
+      const userData = await response.json();
+      return userData;
+    } catch (error) {
+      console.error('Error fetching user data:', error);
+      throw new HttpException('Unable to verify user authentication', HttpStatus.UNAUTHORIZED);
+    }
+  }
+
+  async getUserWalletByUserId(userId: string): Promise<string> {
+    try {
+      const usersServiceUrl = process.env.USERS_SERVICE_URL || 'http://tuvcb-service-users:3003';
+      const response = await fetch(`${usersServiceUrl}/users/${userId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Users service responded with status: ${response.status}`);
+      }
+
+      const userData = await response.json();
+      const walletAddress = userData.address || userData.walletAddress;
+      
+      if (!walletAddress) {
+        throw new Error(`No wallet address found for user ${userId}`);
+      }
+      
+      return walletAddress;
+    } catch (error) {
+      console.error(`Error fetching wallet for user ${userId}:`, error);
+      throw new HttpException(`Unable to get wallet address for user ${userId}`, HttpStatus.BAD_REQUEST);
+    }
+  }
+
+  // Ajouter une méthode pour obtenir les adresses wallet des signataires requis
+  async getSignerWalletAddresses(requiredSignatures: string[]): Promise<{[userId: string]: string}> {
+    const walletAddresses: {[userId: string]: string} = {};
+    
+    for (const userId of requiredSignatures) {
+      try {
+        const walletAddress = await this.getUserWalletByUserId(userId);
+        walletAddresses[userId] = walletAddress;
+      } catch (error) {
+        console.error(`Error getting wallet address for user ${userId}:`, error);
+        // On peut décider de continuer sans cette adresse ou lever une exception
+        throw new HttpException(`Cannot get wallet address for required signer ${userId}`, HttpStatus.BAD_REQUEST);
+      }
+    }
+    
+    return walletAddresses;
+  }
+
+  // Méthode pour vérifier si un utilisateur peut signer une demande via blockchain
+  async canUserSignWithWallet(requestId: string, userWalletAddress: string): Promise<boolean> {
+    const request = await this.findOneDiplomaRequest(requestId);
+    
+    // Obtenir les adresses wallet de tous les signataires requis
+    const signerWallets = await this.getSignerWalletAddresses(request.requiredSignatures);
+    
+    // Vérifier si l'adresse wallet de l'utilisateur est dans les adresses autorisées
+    return Object.values(signerWallets).includes(userWalletAddress);
+  }
   async createDiploma(createDiplomaDto: CreateDiplomaDto): Promise<Diploma> {
     const diploma = this.diplomaRepository.create(createDiplomaDto);
     return await this.diplomaRepository.save(diploma);
@@ -81,27 +159,27 @@ export class DiplomasService {
     console.log('DTO:', createDiplomaRequestDto);
     console.log('Auth Token received:', authToken ? 'Present' : 'Missing');
     
-    // Récupérer l'adresse wallet de l'utilisateur authentifié
-    const userWalletAddress = await this.getUserWalletAddress(authToken);
-    console.log('User wallet address:', userWalletAddress);
+    // Récupérer les informations de l'utilisateur authentifié
+    const currentUser = await this.getUserById(authToken);
+    console.log('Current user:', currentUser);
     
     // Vérifier que le diplôme existe
     await this.findOneDiploma(createDiplomaRequestDto.diplomaId);
 
     const diplomaRequest = this.diplomaRequestRepository.create({
       ...createDiplomaRequestDto,
-      createdBy: userWalletAddress,
+      createdBy: currentUser.id, // Utiliser l'ID utilisateur au lieu de l'adresse wallet
     });
 
     console.log('Diploma request before save:', diplomaRequest);
 
     const savedRequest = await this.diplomaRequestRepository.save(diplomaRequest);
 
-    // Créer les signatures requises avec les adresses wallet
-    const signatures = createDiplomaRequestDto.requiredSignatures.map(signerAddress => 
+    // Créer les signatures requises avec les IDs utilisateurs
+    const signatures = createDiplomaRequestDto.requiredSignatures.map(userId => 
       this.signatureRepository.create({
         diplomaRequestId: savedRequest.id,
-        userId: signerAddress, // Utiliser directement l'adresse wallet
+        userId: userId, // Utiliser directement l'ID utilisateur
       })
     );
 
@@ -117,7 +195,11 @@ export class DiplomasService {
     });
   }
 
-  async findDiplomaRequestsByUser(userWalletAddress: string): Promise<DiplomaRequest[]> {
+  async findDiplomaRequestsByUser(authToken: string): Promise<DiplomaRequest[]> {
+    // Récupérer les informations de l'utilisateur authentifié
+    const currentUser = await this.getUserById(authToken);
+    const currentUserId = currentUser.id;
+    
     // Récupérer toutes les demandes où l'utilisateur est soit créateur, soit signataire requis
     const allRequests = await this.diplomaRequestRepository.find({
       relations: ['diploma', 'signatures'],
@@ -127,12 +209,12 @@ export class DiplomasService {
     // Filtrer les demandes selon les critères
     return allRequests.filter(request => {
       // L'utilisateur est le créateur
-      if (request.createdBy === userWalletAddress) {
+      if (request.createdBy === currentUserId) {
         return true;
       }
       
-      // L'utilisateur est dans les signataires requis (par adresse wallet)
-      if (request.requiredSignatures.includes(userWalletAddress)) {
+      // L'utilisateur est dans les signataires requis (par ID utilisateur)
+      if (request.requiredSignatures.includes(currentUserId)) {
         return true;
       }
       
@@ -158,21 +240,23 @@ export class DiplomasService {
     authToken: string,
     signDto: SignDiplomaRequestDto,
   ): Promise<DiplomaRequest> {
-    // Récupérer l'adresse wallet de l'utilisateur authentifié
-    const userWalletAddress = await this.getUserWalletAddress(authToken);
+    // Récupérer les informations de l'utilisateur authentifié
+    const currentUser = await this.getUserById(authToken);
+    const currentUserId = currentUser.id;
+    const currentUserWalletAddress = await this.getUserWalletAddress(authToken);
     
     const request = await this.findOneDiplomaRequest(requestId);
 
-    // Vérifier que l'utilisateur peut signer (par adresse wallet)
-    if (!request.requiredSignatures.includes(userWalletAddress)) {
+    // Vérifier que l'utilisateur peut signer (par ID utilisateur)
+    if (!request.requiredSignatures.includes(currentUserId)) {
       throw new ForbiddenException('You are not authorized to sign this request');
     }
 
-    // Vérifier si l'utilisateur a déjà signé (par adresse wallet)
+    // Vérifier si l'utilisateur a déjà signé (par ID utilisateur)
     const existingSignature = await this.signatureRepository.findOne({
       where: {
         diplomaRequestId: requestId,
-        userId: userWalletAddress, // Utiliser l'adresse wallet
+        userId: currentUserId, // Utiliser l'ID utilisateur
         isSigned: true,
       },
     });
@@ -181,18 +265,18 @@ export class DiplomasService {
       throw new BadRequestException('You have already signed this request');
     }
 
-    // Mettre à jour ou créer la signature (avec adresse wallet)
+    // Mettre à jour ou créer la signature (avec ID utilisateur)
     let signature = await this.signatureRepository.findOne({
       where: {
         diplomaRequestId: requestId,
-        userId: userWalletAddress, // Utiliser l'adresse wallet
+        userId: currentUserId, // Utiliser l'ID utilisateur
       },
     });
 
     if (!signature) {
       signature = this.signatureRepository.create({
         diplomaRequestId: requestId,
-        userId: userWalletAddress, // Utiliser l'adresse wallet
+        userId: currentUserId, // Utiliser l'ID utilisateur
       });
     }
 
@@ -225,12 +309,13 @@ export class DiplomasService {
   }
 
   async deleteDiplomaRequest(requestId: string, authToken: string): Promise<void> {
-    // Récupérer l'adresse wallet de l'utilisateur authentifié
-    const userWalletAddress = await this.getUserWalletAddress(authToken);
+    // Récupérer les informations de l'utilisateur authentifié
+    const currentUser = await this.getUserById(authToken);
+    const currentUserId = currentUser.id;
     
     const request = await this.findOneDiplomaRequest(requestId);
 
-    if (request.createdBy !== userWalletAddress) {
+    if (request.createdBy !== currentUserId) {
       throw new ForbiddenException('You can only delete your own requests');
     }
 

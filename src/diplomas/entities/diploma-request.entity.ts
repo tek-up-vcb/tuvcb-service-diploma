@@ -20,8 +20,8 @@ export class DiplomaRequest {
   @JoinColumn({ name: 'diplomaId' })
   diploma: Diploma;
 
-  @Column('varchar', { length: 42 })
-  createdBy: string; // Adresse wallet de l'utilisateur créateur
+  @Column('uuid')
+  createdBy: string; // ID de l'utilisateur créateur
 
   @Column('simple-array')
   studentIds: string[]; // IDs des étudiants concernés
@@ -30,7 +30,7 @@ export class DiplomaRequest {
   comment: string;
 
   @Column('simple-array')
-  requiredSignatures: string[]; // Adresses wallet des utilisateurs qui doivent signer
+  requiredSignatures: string[]; // IDs des utilisateurs qui doivent signer
 
   @Column({
     type: 'enum',

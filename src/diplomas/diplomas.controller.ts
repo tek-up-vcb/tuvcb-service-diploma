@@ -43,11 +43,6 @@ export class DiplomasController {
     return await this.diplomasService.findAllDiplomaRequests();
   }
 
-  @Get('requests/user/:walletAddress')
-  async findDiplomaRequestsByUser(@Param('walletAddress') walletAddress: string) {
-    return await this.diplomasService.findDiplomaRequestsByUser(walletAddress);
-  }
-
   @Get('requests/my')
   async findMyDiplomaRequests(@Headers('authorization') authorization: string) {
     const authToken = authorization?.replace('Bearer ', '');
@@ -55,8 +50,23 @@ export class DiplomasController {
       throw new Error('No authentication token provided');
     }
     
+    return await this.diplomasService.findDiplomaRequestsByUser(authToken);
+  }
+
+  @Get('wallet/can-sign/:requestId')
+  async canSignWithWallet(
+    @Param('requestId') requestId: string,
+    @Headers('authorization') authorization: string,
+  ) {
+    const authToken = authorization?.replace('Bearer ', '');
+    if (!authToken) {
+      throw new Error('No authentication token provided');
+    }
+    
     const userWalletAddress = await this.diplomasService.getUserWalletAddress(authToken);
-    return await this.diplomasService.findDiplomaRequestsByUser(userWalletAddress);
+    const canSign = await this.diplomasService.canUserSignWithWallet(requestId, userWalletAddress);
+    
+    return { canSign, walletAddress: userWalletAddress };
   }
 
   @Get('requests/:id')

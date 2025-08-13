@@ -13,8 +13,8 @@ export class DiplomaRequestSignature {
   @JoinColumn({ name: 'diplomaRequestId' })
   diplomaRequest: DiplomaRequest;
 
-  @Column('varchar', { length: 42 })
-  userId: string; // Adresse wallet de l'utilisateur qui signe
+  @Column('uuid')
+  userId: string; // ID de l'utilisateur qui signe
 
   @Column({ default: false })
   isSigned: boolean;
