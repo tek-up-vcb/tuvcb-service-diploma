@@ -35,7 +35,16 @@ export class DiplomasService {
       }
 
       const userData = await response.json();
-      return userData.address;
+      console.log('User data from auth service:', userData);
+      
+      // Le service d'authentification peut retourner l'adresse dans 'address' ou 'walletAddress'
+      const walletAddress = userData.address || userData.walletAddress;
+      
+      if (!walletAddress) {
+        throw new Error('No wallet address found in user data');
+      }
+      
+      return walletAddress;
     } catch (error) {
       console.error('Error fetching user wallet address:', error);
       throw new HttpException('Unable to verify user authentication', HttpStatus.UNAUTHORIZED);
