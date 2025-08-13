@@ -97,11 +97,11 @@ export class DiplomasService {
 
     const savedRequest = await this.diplomaRequestRepository.save(diplomaRequest);
 
-    // Créer les signatures requises
-    const signatures = createDiplomaRequestDto.requiredSignatures.map(signerId => 
+    // Créer les signatures requises avec les adresses wallet
+    const signatures = createDiplomaRequestDto.requiredSignatures.map(signerAddress => 
       this.signatureRepository.create({
         diplomaRequestId: savedRequest.id,
-        userId: signerId,
+        userId: signerAddress, // Utiliser directement l'adresse wallet
       })
     );
 
@@ -118,13 +118,25 @@ export class DiplomasService {
   }
 
   async findDiplomaRequestsByUser(userWalletAddress: string): Promise<DiplomaRequest[]> {
-    return await this.diplomaRequestRepository.find({
-      where: [
-        { createdBy: userWalletAddress },
-        { requiredSignatures: userWalletAddress } // A améliorer avec une vraie relation
-      ],
+    // Récupérer toutes les demandes où l'utilisateur est soit créateur, soit signataire requis
+    const allRequests = await this.diplomaRequestRepository.find({
       relations: ['diploma', 'signatures'],
       order: { createdAt: 'DESC' },
+    });
+
+    // Filtrer les demandes selon les critères
+    return allRequests.filter(request => {
+      // L'utilisateur est le créateur
+      if (request.createdBy === userWalletAddress) {
+        return true;
+      }
+      
+      // L'utilisateur est dans les signataires requis (par adresse wallet)
+      if (request.requiredSignatures.includes(userWalletAddress)) {
+        return true;
+      }
+      
+      return false;
     });
   }
 
@@ -151,16 +163,16 @@ export class DiplomasService {
     
     const request = await this.findOneDiplomaRequest(requestId);
 
-    // Vérifier que l'utilisateur peut signer
+    // Vérifier que l'utilisateur peut signer (par adresse wallet)
     if (!request.requiredSignatures.includes(userWalletAddress)) {
       throw new ForbiddenException('You are not authorized to sign this request');
     }
 
-    // Vérifier si l'utilisateur a déjà signé
+    // Vérifier si l'utilisateur a déjà signé (par adresse wallet)
     const existingSignature = await this.signatureRepository.findOne({
       where: {
         diplomaRequestId: requestId,
-        userId: userWalletAddress,
+        userId: userWalletAddress, // Utiliser l'adresse wallet
         isSigned: true,
       },
     });
@@ -169,18 +181,18 @@ export class DiplomasService {
       throw new BadRequestException('You have already signed this request');
     }
 
-    // Mettre à jour ou créer la signature
+    // Mettre à jour ou créer la signature (avec adresse wallet)
     let signature = await this.signatureRepository.findOne({
       where: {
         diplomaRequestId: requestId,
-        userId: userWalletAddress,
+        userId: userWalletAddress, // Utiliser l'adresse wallet
       },
     });
 
     if (!signature) {
       signature = this.signatureRepository.create({
         diplomaRequestId: requestId,
-        userId: userWalletAddress,
+        userId: userWalletAddress, // Utiliser l'adresse wallet
       });
     }
 
