@@ -5,6 +5,7 @@ import { DiplomasService } from './diplomas.service';
 import { Diploma } from './entities/diploma.entity';
 import { DiplomaRequest } from './entities/diploma-request.entity';
 import { DiplomaRequestSignature } from './entities/diploma-request-signature.entity';
+import { DiplomaAnchorSignature } from './entities/anchor-signature.entity';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { DiplomaRequestSignature } from './entities/diploma-request-signature.en
       Diploma,
       DiplomaRequest,
       DiplomaRequestSignature,
+      DiplomaAnchorSignature,
     ]),
   ],
   controllers: [DiplomasController],

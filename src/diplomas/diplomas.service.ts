@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { Diploma } from './entities/diploma.entity';
 import { DiplomaRequest, DiplomaRequestStatus } from './entities/diploma-request.entity';
 import { DiplomaRequestSignature } from './entities/diploma-request-signature.entity';
+import { DiplomaAnchorSignature } from './entities/anchor-signature.entity';
 import { CreateDiplomaDto } from './dto/create-diploma.dto';
 import { CreateDiplomaRequestDto } from './dto/create-diploma-request.dto';
 import { SignDiplomaRequestDto } from './dto/sign-diploma-request.dto';
@@ -15,8 +16,10 @@ export class DiplomasService {
     private diplomaRepository: Repository<Diploma>,
     @InjectRepository(DiplomaRequest)
     private diplomaRequestRepository: Repository<DiplomaRequest>,
-    @InjectRepository(DiplomaRequestSignature)
-    private signatureRepository: Repository<DiplomaRequestSignature>,
+  @InjectRepository(DiplomaRequestSignature)
+  private signatureRepository: Repository<DiplomaRequestSignature>,
+  @InjectRepository(DiplomaAnchorSignature)
+  private anchorSignatureRepo: Repository<DiplomaAnchorSignature>,
   ) {}
 
   async getUserWalletAddress(authToken: string): Promise<string> {
@@ -298,7 +301,9 @@ export class DiplomasService {
 
     // Vérifier si toutes les signatures sont obtenues
     if (validSignatures >= request.requiredSignatures.length) {
-      request.status = DiplomaRequestStatus.APPROVED;
+  request.status = DiplomaRequestStatus.APPROVED;
+  // Une fois approuvé il devient prêt pour ancrage (étape intermédiaire)
+  request.status = DiplomaRequestStatus.READY_FOR_ANCHOR;
     } else if (!signDto.approve) {
       request.status = DiplomaRequestStatus.REJECTED;
     }
@@ -328,5 +333,42 @@ export class DiplomasService {
     
     // Supprimer la demande
     await this.diplomaRequestRepository.delete(requestId);
+  }
+
+  // Marquer une demande comme "ancrage demandé" pour éviter doublons
+  async requestAnchor(requestId: string, authToken: string, batchId: string, diplomeLabel: string, signer?: string, signature?: string) {
+    const currentUser = await this.getUserById(authToken);
+    const request = await this.findOneDiplomaRequest(requestId);
+    if (request.status !== DiplomaRequestStatus.READY_FOR_ANCHOR) {
+      throw new BadRequestException('Request not ready for anchoring');
+    }
+    if (request.anchorRequested) {
+      throw new BadRequestException('Anchor already requested');
+    }
+    request.anchorRequested = true;
+    request.anchorBatchId = batchId;
+    request.anchorDiplomeLabel = diplomeLabel;
+    await this.diplomaRequestRepository.save(request);
+    if (signer && signature) {
+      const message = `Anchor diploma batch ${batchId} for request ${requestId}`;
+      const record = this.anchorSignatureRepo.create({
+        diplomaRequestId: requestId,
+        signerAddress: signer,
+        message,
+        signature,
+      });
+      await this.anchorSignatureRepo.save(record);
+    }
+    return request;
+  }
+
+  // Finaliser ancrage après retour blockchain
+  async confirmAnchored(requestId: string, txHash: string) {
+    const request = await this.findOneDiplomaRequest(requestId);
+    if (!request.anchorRequested) throw new BadRequestException('Anchor not requested');
+    request.status = DiplomaRequestStatus.ANCHORED;
+    request.anchorTxHash = txHash;
+    await this.diplomaRequestRepository.save(request);
+    return request;
   }
 }

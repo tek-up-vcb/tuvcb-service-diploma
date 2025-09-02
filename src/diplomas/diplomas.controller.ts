@@ -103,6 +103,27 @@ export class DiplomasController {
     await this.diplomasService.deleteDiplomaRequest(id, authToken);
   }
 
+  // Demander ancrage (verrouille pour ne pas refaire)
+  @Post('requests/:id/anchor-request')
+  async requestAnchor(
+    @Param('id') id: string,
+    @Headers('authorization') authorization: string,
+    @Body() body: { batchId: string; diplomeLabel: string; signer?: string; signature?: string }
+  ) {
+    const authToken = authorization?.replace('Bearer ', '');
+    if (!authToken) throw new Error('No authentication token provided');
+    return this.diplomasService.requestAnchor(id, authToken, body.batchId, body.diplomeLabel, body.signer, body.signature);
+  }
+
+  // Confirmer ancrage après tx blockchain
+  @Post('requests/:id/anchor-confirm')
+  async confirmAnchor(
+    @Param('id') id: string,
+    @Body() body: { txHash: string }
+  ) {
+    return this.diplomasService.confirmAnchored(id, body.txHash);
+  }
+
   // Endpoints pour les diplômes (routes avec paramètres à la fin)
   @Get(':id')
   async findOneDiploma(@Param('id') id: string) {

@@ -6,6 +6,8 @@ export enum DiplomaRequestStatus {
   PENDING = 'pending',
   APPROVED = 'approved',
   REJECTED = 'rejected',
+  READY_FOR_ANCHOR = 'ready_for_anchor',
+  ANCHORED = 'anchored'
 }
 
 @Entity('diploma_requests')
@@ -41,6 +43,19 @@ export class DiplomaRequest {
 
   @Column({ default: 0 })
   validSignatures: number;
+
+  // Nouvelle étape d'ancrage blockchain
+  @Column({ type: 'boolean', default: false })
+  anchorRequested: boolean;
+
+  @Column({ type: 'varchar', length: 66, nullable: true })
+  anchorTxHash: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  anchorBatchId: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  anchorDiplomeLabel: string | null;
 
   @OneToMany(() => DiplomaRequestSignature, signature => signature.diplomaRequest)
   signatures: DiplomaRequestSignature[];
