@@ -129,4 +129,16 @@ export class DiplomasController {
   async findOneDiploma(@Param('id') id: string) {
     return await this.diplomasService.findOneDiploma(id);
   }
+
+  // KPIs agrégés (templates + demandes)
+  @Get('kpi/metrics/all')
+  async getDiplomaKpis() {
+    return this.diplomasService.getKpiMetrics();
+  }
+
+  // Nombre d'étudiants diplômés (distinct sur demandes ancrées)
+  @Get('kpi/graduated-students')
+  async getGraduatedStudents() {
+    return this.diplomasService.countGraduatedStudents();
+  }
 }

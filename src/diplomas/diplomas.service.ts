@@ -22,6 +22,59 @@ export class DiplomasService {
   private anchorSignatureRepo: Repository<DiplomaAnchorSignature>,
   ) {}
 
+  // --- Cache mémoire léger KPI ---
+  private kpiCache: { data: any; ts: number } | null = null;
+  private graduatedCache: { data: any; ts: number } | null = null;
+  private readonly KPI_TTL_MS = 60_000; // 60s
+
+  private isFresh(entry: { ts: number } | null) {
+    return !!entry && (Date.now() - entry.ts) < this.KPI_TTL_MS;
+  }
+
+  private invalidateKpi() {
+    this.kpiCache = null;
+    this.graduatedCache = null;
+  }
+
+  /**
+   * Retourne des KPI agrégés pour l'affichage dans le dashboard
+   * - totalDiplomas: nombre de templates de diplômes actifs
+   * - totalRequests: nombre total de demandes (tous statuts)
+   * - pendingRequests: demandes en attente de validation (PENDING)
+   * - readyForAnchor: demandes prêtes pour ancrage
+   * - anchoredRequests: demandes ancrées on-chain
+   */
+  async getKpiMetrics() {
+    if (this.isFresh(this.kpiCache)) return this.kpiCache.data;
+    const [totalDiplomas, totalRequests, pendingRequests, readyForAnchor, anchoredRequests] = await Promise.all([
+      this.diplomaRepository.count({ where: { isActive: true } }),
+      this.diplomaRequestRepository.count(),
+      this.diplomaRequestRepository.count({ where: { status: DiplomaRequestStatus.PENDING } }),
+      this.diplomaRequestRepository.count({ where: { status: DiplomaRequestStatus.READY_FOR_ANCHOR } }),
+      this.diplomaRequestRepository.count({ where: { status: DiplomaRequestStatus.ANCHORED } }),
+    ]);
+    const payload = { totalDiplomas, totalRequests, pendingRequests, readyForAnchor, anchoredRequests };
+    this.kpiCache = { data: payload, ts: Date.now() };
+    return payload;
+  }
+
+  /**
+   * Compte approximatif des étudiants diplômés = somme des studentIds distincts
+   * des demandes ANCHORED. (Optimisation possible via requête SQL plus poussée.)
+   */
+  async countGraduatedStudents(): Promise<{ graduatedStudents: number; anchoredRequests: number; }> {
+    if (this.isFresh(this.graduatedCache)) return this.graduatedCache.data;
+    const anchored = await this.diplomaRequestRepository.find({
+      where: { status: DiplomaRequestStatus.ANCHORED },
+      select: ['studentIds', 'id'],
+    });
+    const set = new Set<string>();
+    anchored.forEach(r => r.studentIds?.forEach(id => set.add(id)));
+    const data = { graduatedStudents: set.size, anchoredRequests: anchored.length };
+    this.graduatedCache = { data, ts: Date.now() };
+    return data;
+  }
+
   async getUserWalletAddress(authToken: string): Promise<string> {
     try {
       const authServiceUrl = process.env.AUTH_SERVICE_URL || 'http://tuvcb-service-auth:3001';
