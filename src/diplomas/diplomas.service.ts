@@ -45,7 +45,10 @@ export class DiplomasService {
    * - anchoredRequests: demandes ancrées on-chain
    */
   async getKpiMetrics() {
-    if (this.isFresh(this.kpiCache)) return this.kpiCache.data;
+    const cache = this.kpiCache;
+    if (cache && this.isFresh(cache)) {
+      return cache.data;
+    }
     const [totalDiplomas, totalRequests, pendingRequests, readyForAnchor, anchoredRequests] = await Promise.all([
       this.diplomaRepository.count({ where: { isActive: true } }),
       this.diplomaRequestRepository.count(),
@@ -63,7 +66,9 @@ export class DiplomasService {
    * des demandes ANCHORED. (Optimisation possible via requête SQL plus poussée.)
    */
   async countGraduatedStudents(): Promise<{ graduatedStudents: number; anchoredRequests: number; }> {
-    if (this.isFresh(this.graduatedCache)) return this.graduatedCache.data;
+    if (this.graduatedCache && this.isFresh(this.graduatedCache)) {
+      return this.graduatedCache.data;
+    }
     const anchored = await this.diplomaRequestRepository.find({
       where: { status: DiplomaRequestStatus.ANCHORED },
       select: ['studentIds', 'id'],
