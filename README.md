@@ -1,98 +1,75 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# TUVCB Service Diploma
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Ce micro‑service NestJS assure la gestion des diplômes numériques et des demandes de diplômes. Il permet de créer des diplômes, de gérer leur état (délivré ou non), de recevoir des demandes de diplômes de la part des étudiants et de coordonner la signature et l’ancrage de ces demandes sur la blockchain via le service blockchain. Les contrôleurs exposent les routes pour les diplômes, les demandes et des indicateurs de performance (KPI).
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Fonctionnement général
 
-## Description
+Une demande de diplôme suit un flux de travail : un étudiant soumet une requête, les utilisateurs autorisés (inscripteurs ou administrateurs) la signent, puis, une fois toutes les signatures recueillies, la requête est marquée prête pour l’ancrage. L’ancrage consiste à enregistrer la preuve du diplôme sur la blockchain, ce qui est réalisé via l’API du service blockchain. Une fois l’ancrage effectué, la transaction est confirmée et la demande passe au statut `ANCHORED`. Les statuts possibles (`PENDING`, `APPROVED`, `REJECTED`, `READY_FOR_ANCHOR`, `ANCHORED`) sont définis dans l’entité `DiplomaRequest`.
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+Le service communique avec :
 
-## Project setup
+- **Service Auth** : pour récupérer l’adresse du portefeuille de l’utilisateur via l’environnement `AUTH_SERVICE_URL`.
+- **Service Users** : pour récupérer les informations de l’utilisateur et vérifier ses rôles via `USERS_SERVICE_URL`.
+- **Service Blockchain** : pour ancrer les diplômes via une transaction Ethereum (URL généralement `http://tuvcb-service-blockchain:3000` ou exposé par Traefik).
 
-```bash
-$ npm install
-```
+## Installation et configuration
 
-## Compile and run the project
+1. **Prérequis :** Node 14 ou plus, pnpm/npm, et une base PostgreSQL.
+2. **Clonage :** `git clone https://github.com/tek-up-vcb/tuvcb-service-diploma.git`.
+3. **Variables d’environnement :** copiez `.env.example` en `.env` puis renseignez :
 
-```bash
-# development
-$ npm run start
+   | Variable                                                          | Description                                                             |
+   | ----------------------------------------------------------------- | ----------------------------------------------------------------------- |
+   | `PORT`                                                            | Port HTTP (défaut : 3004).                                              |
+   | `NODE_ENV`                                                        | Environnement (`development` ou `production`).                          |
+   | `DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD`, `DB_DATABASE` | Paramètres de connexion PostgreSQL et synchronisation (activée en dev). |
+   | `AUTH_SERVICE_URL`                                                | URL du service Auth pour récupérer le portefeuille utilisateur.         |
+   | `USERS_SERVICE_URL`                                               | URL du service Users pour obtenir les informations utilisateur.         |
+   | `BLOCKCHAIN_SERVICE_URL`                                          | URL de l’API blockchain pour ancrer les diplômes.                       |
+   | `JWT_SECRET`, `JWT_EXPIRES_IN`                                    | Clé et durée de validation des JWT servant à protéger certaines routes. |
 
-# watch mode
-$ npm run start:dev
+4. **Installation des dépendances :** `pnpm install` ou `npm install`.
+5. **Migrations :** en mode développement, TypeORM synchronise automatiquement la base. En production, appliquez vos migrations.
+6. **Lancement :** `npm run start:dev`.
 
-# production mode
-$ npm run start:prod
-```
+Dans l’orchestration Docker, ces variables sont définies dans `docker-compose.yml`; Traefik expose l’API via `http://app.localhost/api/diplomas`.
 
-## Run tests
+## API Diplomas
 
-```bash
-# unit tests
-$ npm run test
+Les endpoints liés aux diplômes sont :
 
-# e2e tests
-$ npm run test:e2e
+| Méthode & route         | Description                                                             |
+| ----------------------- | ----------------------------------------------------------------------- |
+| **POST** `/diplomas`    | Créer un nouveau diplôme (titre, étudiant, date, résumé).               |
+| **GET** `/diplomas`     | Lister tous les diplômes filtrés par étudiant, par titre ou par statut. |
+| **GET** `/diplomas/:id` | Obtenir le détail d’un diplôme particulier.                             |
 
-# test coverage
-$ npm run test:cov
-```
+## API Requests (demandes de diplômes)
 
-## Deployment
+Ces endpoints gèrent le cycle de vie des demandes :
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+| Méthode & route                                 | Description                                                                                                                                                                                                        |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **POST** `/diplomas/requests`                   | Soumettre une nouvelle demande de diplôme. L’étudiant doit être authentifié; le service crée un enregistrement avec statut `PENDING`.                                                                              |
+| **GET** `/diplomas/requests`                    | Lister les demandes existantes avec filtrage (par statut ou par étudiant).                                                                                                                                         |
+| **GET** `/diplomas/requests/:id`                | Obtenir une demande par son identifiant.                                                                                                                                                                           |
+| **PUT** `/diplomas/requests/:id/sign`           | Signer une demande. Les signataires autorisés (administrateurs ou responsables pédagogiques) ajoutent leur signature; lorsque toutes les signatures requises sont présentes, le statut passe à `READY_FOR_ANCHOR`. |
+| **DELETE** `/diplomas/requests/:id`             | Supprimer une demande existante.                                                                                                                                                                                   |
+| **PUT** `/diplomas/requests/:id/anchor-request` | Demander l’ancrage. Le service appelle le service blockchain pour enregistrer le diplôme et crée un batch ID.                                                                                                      |
+| **PUT** `/diplomas/requests/:id/anchor-confirm` | Confirmer l’ancrage en enregistrant le hash de transaction et le résultat de la blockchain.                                                                                                                        |
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+## API KPIs
 
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
+Afin de suivre l’avancement des délivrances, le service expose des endpoints de métriques :
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+| Méthode & route                            | Description                                                                                              |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| **GET** `/diplomas/kpi/metrics/all`        | Renvoie des agrégats : nombre total de demandes, nombre en attente, prêtes pour l’ancrage, ancrées, etc. |
+| **GET** `/diplomas/kpi/graduated-students` | Nombre total d’étudiants ayant obtenu un diplôme.                                                        |
 
-## Resources
+## Conseils et bonnes pratiques
 
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+- **Signature et authentification** : toutes les routes liées à la création ou à la signature des diplômes nécessitent un JWT valide dans l’en‑tête `Authorization`. Assurez‑vous d’interroger le service Auth pour obtenir un token.
+- **Coordination avec la blockchain** : l’ancrage est asynchrone ; utilisez les endpoints `anchor-request` et `anchor-confirm` pour gérer cet état. Le service `blockchain` doit être disponible et correctement configuré.
+- **Synchronisation de base** : désactivez `synchronize` en production pour éviter de perdre des données et gérez les migrations explicitement.
+- **Résolution DNS** : dans l’environnement local, ajoutez `127.0.0.1 app.localhost` dans votre `/etc/hosts` afin que `app.localhost` résolve vers votre machine pour la configuration Traefik.
